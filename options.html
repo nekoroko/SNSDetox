@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SNS Detox Settings</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f8f9fa;
+      color: #333;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    h1 {
+      color: #4a76a8;
+      margin-bottom: 10px;
+    }
+    
+    .subtitle {
+      color: #6c757d;
+      font-size: 16px;
+    }
+    
+    .card {
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    h2 {
+      color: #4a76a8;
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .site-list {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .site-item {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid #e9ecef;
+    }
+    
+    .site-item:last-child {
+      border-bottom: none;
+    }
+    
+    .site-name {
+      flex-grow: 1;
+    }
+    
+    .site-actions {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      background-color: #4a76a8;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .btn:hover {
+      background-color: #3a5b8c;
+    }
+    
+    .btn-danger {
+      background-color: #e74c3c;
+    }
+    
+    .btn-danger:hover {
+      background-color: #c0392b;
+    }
+    
+    .btn-secondary {
+      background-color: #6c757d;
+    }
+    
+    .btn-secondary:hover {
+      background-color: #5a6268;
+    }
+    
+    .add-site-form {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    
+    .add-site-form input {
+      flex-grow: 1;
+    }
+    
+    .time-settings {
+      display: flex;
+      gap: 20px;
+    }
+    
+    .time-settings .form-group {
+      flex: 1;
+    }
+    
+    .status-message {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    
+    footer {
+      margin-top: 40px;
+      text-align: center;
+      color: #6c757d;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SNS Detox Settings</h1>
+    <div class="subtitle">Customize your social media usage limits</div>
+  </header>
+  
+  <div class="card">
+    <h2>Monitored Sites</h2>
+    <p>These are the social media sites that will be monitored and restricted:</p>
+    
+    <ul class="site-list" id="site-list">
+      <!-- Sites will be populated by JavaScript -->
+    </ul>
+    
+    <div class="add-site-form">
+      <input type="text" id="new-site" placeholder="Enter domain (e.g., facebook.com)">
+      <button class="btn" id="add-site-btn">Add Site</button>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Time Restrictions</h2>
+    <p>Set the time thresholds for applying restrictions:</p>
+    
+    <div class="time-settings">
+      <div class="form-group">
+        <label for="grayscale-time">Grayscale after (minutes):</label>
+        <input type="number" id="grayscale-time" min="1" max="180">
+      </div>
+      
+      <div class="form-group">
+        <label for="block-time">Block access after (minutes):</label>
+        <input type="number" id="block-time" min="5" max="240">
+      </div>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Data Management</h2>
+    <p>Manage your usage data and extension settings:</p>
+    
+    <button class="btn" id="reset-all-btn">Reset All Usage Data</button>
+    <button class="btn btn-secondary" id="export-btn">Export Settings</button>
+    <button class="btn btn-secondary" id="import-btn">Import Settings</button>
+  </div>
+  
+  <div id="status-message" class="status-message" style="display: none;"></div>
+  
+  <footer>
+    SNS Detox v1.0 - Take control of your social media usage
+  </footer>
+  
+  <script src="options.js"></script>
+</body>
+</html>

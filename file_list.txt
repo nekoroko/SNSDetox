@@ -1,0 +1,24 @@
+SNS Detox Extension Files
+=======================
+
+Core Extension Files:
+- manifest.json - Extension configuration
+- background.js - Background service worker for time tracking
+- content.js - Content script for applying restrictions
+- popup.html - Popup UI
+- popup.js - Popup functionality
+- options.html - Settings page UI
+- options.js - Settings page functionality
+- images/ - Directory for icon files
+  - icon128.png
+  - README.txt - Instructions for generating icons
+
+Helper Files:
+- generate_icons.html - Tool to generate icon files
+- README.md - Project documentation
+- INSTALLATION.md - Installation guide
+- LICENSE - MIT License
+- .gitignore - Git ignore file
+- file_list.txt - This file
+
+All these files together form a complete Chrome extension that helps users limit their social media usage by applying time-based restrictions.
