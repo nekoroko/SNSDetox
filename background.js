@@ -160,15 +160,19 @@ function initTabData(tabId, url) {
     intervalId: setInterval(() => updateTabTime(tabId), 1000) // Update every second
   };
   
-  // Apply any existing restrictions based on stored data
-  chrome.storage.local.get([url], (result) => {
-    if (result[url]) {
-      const storedData = result[url];
-      tabData[tabId].totalTime = storedData.totalTime || 0;
-      // Apply appropriate restrictions based on stored time
-      applyRestrictions(tabId);
-    }
-  });
+  // Apply any existing restrictions based on stored data by domain
+  const domain = getDomainFromUrl(url);
+  
+  if (domain) {
+    chrome.storage.local.get([domain], (result) => {
+      if (result[domain]) {
+        const storedData = result[domain];
+        tabData[tabId].totalTime = storedData.totalTime || 0;
+        // Apply appropriate restrictions based on stored time
+        applyRestrictions(tabId);
+      }
+    });
+  }
 }
 
 // Update time tracking for a tab
@@ -180,14 +184,18 @@ function updateTabTime(tabId) {
   tabData[tabId].totalTime += elapsed;
   tabData[tabId].lastActiveTime = now;
   
-  // Save the updated time to storage
+  // Save the updated time to storage by domain instead of URL
   const url = tabData[tabId].url;
-  chrome.storage.local.set({
-    [url]: {
-      totalTime: tabData[tabId].totalTime,
-      lastUpdated: now
-    }
-  });
+  const domain = getDomainFromUrl(url);
+  
+  if (domain) {
+    chrome.storage.local.set({
+      [domain]: {
+        totalTime: tabData[tabId].totalTime,
+        lastUpdated: now
+      }
+    });
+  }
   
   // Apply restrictions based on total time
   applyRestrictions(tabId);
@@ -232,14 +240,18 @@ function pauseTracking(tabId) {
     tabData[tabId].totalTime += elapsed;
     tabData[tabId].isActive = false;
     
-    // Save to storage
+    // Save to storage by domain
     const url = tabData[tabId].url;
-    chrome.storage.local.set({
-      [url]: {
-        totalTime: tabData[tabId].totalTime,
-        lastUpdated: now
-      }
-    });
+    const domain = getDomainFromUrl(url);
+    
+    if (domain) {
+      chrome.storage.local.set({
+        [domain]: {
+          totalTime: tabData[tabId].totalTime,
+          lastUpdated: now
+        }
+      });
+    }
   }
 }
 
@@ -256,11 +268,16 @@ function resumeTracking(tabId) {
 
 // Reset usage data (can be triggered from popup)
 function resetUsageData(url) {
-  chrome.storage.local.remove(url);
+  // Get domain from URL and remove domain-based data
+  const domain = getDomainFromUrl(url);
+  if (domain) {
+    chrome.storage.local.remove(domain);
+  }
   
-  // Reset any active tabs with this URL
+  // Reset any active tabs with this domain
   Object.keys(tabData).forEach((tabId) => {
-    if (tabData[tabId].url === url) {
+    const tabDomain = getDomainFromUrl(tabData[tabId].url);
+    if (tabDomain && tabDomain === domain) {
       tabData[tabId].totalTime = 0;
       tabData[tabId].startTime = Date.now();
       tabData[tabId].lastActiveTime = Date.now();
@@ -341,6 +358,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+// Check if data should be reset (at midnight)
+function checkDataReset() {
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  
+  // Reset at midnight (00:00-00:01)
+  if (hours === 0 && minutes < 1) {
+    console.log("Midnight reset: Clearing all usage data");
+    chrome.storage.local.clear();
+    
+    // Reset all tab data
+    Object.keys(tabData).forEach((tabId) => {
+      tabData[tabId].totalTime = 0;
+      tabData[tabId].startTime = Date.now();
+      tabData[tabId].lastActiveTime = Date.now();
+      tabData[tabId].status = 'normal';
+      
+      // Update the content script
+      chrome.tabs.sendMessage(parseInt(tabId), {
+        action: 'updateRestriction',
+        status: 'normal'
+      }).catch(error => {
+        console.error("Error sending reset message to content script:", error);
+      });
+    });
+  }
+}
+
+// Set up a timer to check for data reset every minute
+setInterval(checkDataReset, 60000);
 
 // Listen for installation or update
 chrome.runtime.onInstalled.addListener((details) => {

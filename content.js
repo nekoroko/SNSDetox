@@ -1,6 +1,8 @@
 // Initialize variables
 let currentStatus = 'normal';
 let styleElement = null;
+let timerElement = null;
+let timerInterval = null;
 
 // Create a style element for CSS modifications
 function createStyleElement() {
@@ -145,6 +147,88 @@ function removeGrayscale() {
   const notification = document.getElementById('sns-detox-notification');
   if (notification) {
     notification.remove();
+  }
+}
+
+// Format milliseconds to MM:SS
+function formatTime(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Create and show the timer element
+function createTimer() {
+  // Remove existing timer if any
+  removeTimer();
+  
+  // Create timer element
+  timerElement = document.createElement('div');
+  timerElement.id = 'sns-detox-timer';
+  timerElement.style.cssText = `
+    position: fixed;
+    top: 60px;
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 2147483645;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  `;
+  
+  document.body.appendChild(timerElement);
+  
+  // Start timer update interval
+  startTimerUpdate();
+}
+
+// Start updating the timer
+function startTimerUpdate() {
+  // Clear any existing interval
+  if (timerInterval) {
+    clearInterval(timerInterval);
+  }
+  
+  // Get initial status
+  chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+    if (response && response.totalTime) {
+      updateTimerDisplay(response.totalTime);
+      
+      // Update timer every second
+      timerInterval = setInterval(() => {
+        chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+          if (response && response.totalTime) {
+            updateTimerDisplay(response.totalTime);
+          }
+        });
+      }, 1000);
+    }
+  });
+}
+
+// Update the timer display
+function updateTimerDisplay(totalTime) {
+  if (timerElement) {
+    timerElement.textContent = formatTime(totalTime);
+  }
+}
+
+// Remove the timer
+function removeTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  
+  if (timerElement) {
+    timerElement.remove();
+    timerElement = null;
   }
 }
 
@@ -305,11 +389,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Check if a URL is an SNS site
+async function checkIfSNSSite(url) {
+  if (!url) return false;
+  const domain = getDomainFromUrl(url);
+  if (!domain) return false;
+  
+  try {
+    // Get settings from storage
+    const settings = await new Promise((resolve) => {
+      chrome.storage.sync.get('settings', (result) => {
+        resolve(result.settings);
+      });
+    });
+    
+    // Check if the domain is in the monitored sites list
+    if (settings && settings.sites && Array.isArray(settings.sites)) {
+      return settings.sites.some(site => domain.includes(site.domain));
+    }
+  } catch (error) {
+    console.error("Error checking if site is SNS:", error);
+  }
+  
+  return false;
+}
+
 // Check current status when the page loads
-window.addEventListener('load', () => {
-  chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+window.addEventListener('load', async () => {
+  // Get current status
+  chrome.runtime.sendMessage({ action: 'getStatus' }, async (response) => {
     if (response) {
       updateRestriction(response.status);
+      
+      // Check if this is an SNS site
+      const isSNS = await checkIfSNSSite(window.location.href);
+      
+      // Create and show timer if on an SNS site
+      if (isSNS) {
+        createTimer();
+      }
     }
   });
 });
@@ -317,9 +435,17 @@ window.addEventListener('load', () => {
 // Make sure the restrictions are applied even if the page was already loaded
 // when the extension was activated
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
-  chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+  chrome.runtime.sendMessage({ action: 'getStatus' }, async (response) => {
     if (response) {
       updateRestriction(response.status);
+      
+      // Check if this is an SNS site
+      const isSNS = await checkIfSNSSite(window.location.href);
+      
+      // Create and show timer if on an SNS site
+      if (isSNS) {
+        createTimer();
+      }
     }
   });
 }

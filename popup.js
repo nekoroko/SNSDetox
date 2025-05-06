@@ -176,22 +176,41 @@ function getThresholdsForUrl(url) {
 async function getAllSitesData() {
   return new Promise((resolve) => {
     chrome.storage.local.get(null, (result) => {
-      const sitesData = [];
+      // Create a map to store total time for each configured site
+      const siteTimeMap = {};
       
+      // Initialize the map with all configured sites
+      settings.sites.forEach(site => {
+        siteTimeMap[site.domain] = {
+          domain: site.domain,
+          totalTime: 0,
+          lastUpdated: 0
+        };
+      });
+      
+      // Process all domains in storage
       for (const key in result) {
-        // Only include keys that are URLs
-        if (key.startsWith('http')) {
-          const domain = getDomainFromUrl(key);
-          if (domain && isSNSSite(key)) {
-            sitesData.push({
-              url: key,
-              domain: domain,
-              totalTime: result[key].totalTime || 0,
-              lastUpdated: result[key].lastUpdated || 0
-            });
+        const domain = key;
+        
+        // Find which configured site this domain belongs to
+        for (const site of settings.sites) {
+          if (domain && domain.includes(site.domain)) {
+            // Add time to the appropriate configured site
+            siteTimeMap[site.domain].totalTime += result[key].totalTime || 0;
+            
+            // Update lastUpdated if this is more recent
+            const lastUpdated = result[key].lastUpdated || 0;
+            if (lastUpdated > siteTimeMap[site.domain].lastUpdated) {
+              siteTimeMap[site.domain].lastUpdated = lastUpdated;
+            }
+            
+            break; // Stop after finding the first match
           }
         }
       }
+      
+      // Convert map to array
+      const sitesData = Object.values(siteTimeMap).filter(site => site.totalTime > 0);
       
       resolve(sitesData);
     });
@@ -202,34 +221,24 @@ async function getAllSitesData() {
 async function populateSiteList() {
   const sitesData = await getAllSitesData();
   
-  // Group by domain and sum times
-  const domainMap = {};
-  
-  sitesData.forEach(site => {
-    if (!domainMap[site.domain]) {
-      domainMap[site.domain] = 0;
-    }
-    domainMap[site.domain] += site.totalTime;
-  });
-  
   // Clear the list
   siteList.innerHTML = '';
   
   // Add each domain to the list
-  Object.keys(domainMap).forEach(domain => {
+  sitesData.forEach(site => {
     const listItem = document.createElement('li');
     listItem.className = 'site-item';
     
     // Find site settings for this domain
-    const siteSettings = settings.sites.find(site => domain.includes(site.domain));
+    const siteSettings = settings.sites.find(s => site.domain.includes(s.domain));
     
     const siteName = document.createElement('span');
     siteName.className = 'site-name';
-    siteName.textContent = domain;
+    siteName.textContent = site.domain;
     
     const siteTime = document.createElement('span');
     siteTime.className = 'site-time';
-    siteTime.textContent = formatTime(domainMap[domain]);
+    siteTime.textContent = formatTime(site.totalTime);
     
     // Add time limits info
     const timeLimits = document.createElement('span');
@@ -249,7 +258,7 @@ async function populateSiteList() {
   });
   
   // If no sites, show a message
-  if (Object.keys(domainMap).length === 0) {
+  if (sitesData.length === 0) {
     const listItem = document.createElement('li');
     listItem.className = 'site-item';
     listItem.textContent = 'No SNS usage data yet';
@@ -277,6 +286,17 @@ async function initPopup() {
               currentStatus = response.status;
               currentTime = response.totalTime;
               updateUI();
+            } else {
+              // If no response from background script, try to get data from storage
+              const domain = getDomainFromUrl(currentTab.url);
+              if (domain) {
+                chrome.storage.local.get([domain], (result) => {
+                  if (result[domain]) {
+                    currentTime = result[domain].totalTime || 0;
+                    updateUI();
+                  }
+                });
+              }
             }
           }
         );
@@ -313,7 +333,7 @@ function resetCurrentSite() {
           populateSiteList();
           
           // Show a success message
-          statusMessage.textContent = 'Data reset successfully';
+          statusMessage.textContent = `Data for ${currentSite} reset successfully`;
           setTimeout(() => {
             statusMessage.textContent = 'No restrictions active';
           }, 2000);
