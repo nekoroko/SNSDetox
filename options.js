@@ -12,14 +12,14 @@ const statusMessage = document.getElementById('status-message');
 // Default settings
 const DEFAULT_SETTINGS = {
   sites: [
-    "facebook.com",
-    "twitter.com",
-    "instagram.com",
-    "tiktok.com",
-    "linkedin.com"
+    { domain: "facebook.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "twitter.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "instagram.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "tiktok.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "linkedin.com", grayscaleTime: 15, blockTime: 45 }
   ],
-  grayscaleTime: 15, // minutes
-  blockTime: 45      // minutes
+  defaultGrayscaleTime: 15, // minutes - used for newly added sites
+  defaultBlockTime: 45      // minutes - used for newly added sites
 };
 
 // Current settings
@@ -59,7 +59,49 @@ function updateUI() {
     
     const siteName = document.createElement('div');
     siteName.className = 'site-name';
-    siteName.textContent = site;
+    siteName.textContent = site.domain;
+    
+    const siteTimeSettings = document.createElement('div');
+    siteTimeSettings.className = 'site-time-settings';
+    
+    // Grayscale time input
+    const grayscaleContainer = document.createElement('div');
+    grayscaleContainer.className = 'time-input-container';
+    
+    const grayscaleLabel = document.createElement('label');
+    grayscaleLabel.textContent = 'Grayscale:';
+    
+    const grayscaleInput = document.createElement('input');
+    grayscaleInput.type = 'number';
+    grayscaleInput.min = '1';
+    grayscaleInput.max = '180';
+    grayscaleInput.value = site.grayscaleTime;
+    grayscaleInput.className = 'site-time-input';
+    grayscaleInput.addEventListener('change', () => updateSiteTimeSettings(site.domain, 'grayscaleTime', parseInt(grayscaleInput.value)));
+    
+    grayscaleContainer.appendChild(grayscaleLabel);
+    grayscaleContainer.appendChild(grayscaleInput);
+    
+    // Block time input
+    const blockContainer = document.createElement('div');
+    blockContainer.className = 'time-input-container';
+    
+    const blockLabel = document.createElement('label');
+    blockLabel.textContent = 'Block:';
+    
+    const blockInput = document.createElement('input');
+    blockInput.type = 'number';
+    blockInput.min = '5';
+    blockInput.max = '240';
+    blockInput.value = site.blockTime;
+    blockInput.className = 'site-time-input';
+    blockInput.addEventListener('change', () => updateSiteTimeSettings(site.domain, 'blockTime', parseInt(blockInput.value)));
+    
+    blockContainer.appendChild(blockLabel);
+    blockContainer.appendChild(blockInput);
+    
+    siteTimeSettings.appendChild(grayscaleContainer);
+    siteTimeSettings.appendChild(blockContainer);
     
     const siteActions = document.createElement('div');
     siteActions.className = 'site-actions';
@@ -67,88 +109,141 @@ function updateUI() {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-danger';
     removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => removeSite(site));
+    removeBtn.addEventListener('click', () => removeSite(site.domain));
     
     siteActions.appendChild(removeBtn);
+    
     listItem.appendChild(siteName);
+    listItem.appendChild(siteTimeSettings);
     listItem.appendChild(siteActions);
     siteList.appendChild(listItem);
   });
   
-  // Update time inputs
-  grayscaleTimeInput.value = currentSettings.grayscaleTime;
-  blockTimeInput.value = currentSettings.blockTime;
+  // Update default time inputs
+  grayscaleTimeInput.value = currentSettings.defaultGrayscaleTime;
+  blockTimeInput.value = currentSettings.defaultBlockTime;
+}
+
+// Update time settings for a specific site
+async function updateSiteTimeSettings(domain, settingType, value) {
+  // Find the site in the settings
+  const siteIndex = currentSettings.sites.findIndex(site => site.domain === domain);
+  
+  if (siteIndex === -1) {
+    showStatus(`Site ${domain} not found`, 'error');
+    return;
+  }
+  
+  // Validate the input
+  if (settingType === 'grayscaleTime') {
+    if (isNaN(value) || value < 1 || value > 180) {
+      showStatus('Grayscale time must be between 1 and 180 minutes', 'error');
+      updateUI(); // Reset UI to current settings
+      return;
+    }
+    
+    if (currentSettings.sites[siteIndex].blockTime <= value) {
+      showStatus('Block time must be greater than grayscale time', 'error');
+      updateUI(); // Reset UI to current settings
+      return;
+    }
+    
+    currentSettings.sites[siteIndex].grayscaleTime = value;
+  } else if (settingType === 'blockTime') {
+    if (isNaN(value) || value < 5 || value > 240) {
+      showStatus('Block time must be between 5 and 240 minutes', 'error');
+      updateUI(); // Reset UI to current settings
+      return;
+    }
+    
+    if (value <= currentSettings.sites[siteIndex].grayscaleTime) {
+      showStatus('Block time must be greater than grayscale time', 'error');
+      updateUI(); // Reset UI to current settings
+      return;
+    }
+    
+    currentSettings.sites[siteIndex].blockTime = value;
+  }
+  
+  // Save the updated settings
+  await saveSettings();
+  showStatus(`Updated ${settingType} for ${domain}`, 'success');
 }
 
 // Add a new site
 async function addSite() {
-  const site = newSiteInput.value.trim().toLowerCase();
+  const domain = newSiteInput.value.trim().toLowerCase();
   
-  if (!site) {
+  if (!domain) {
     showStatus('Please enter a valid domain', 'error');
     return;
   }
   
   // Basic validation
-  if (!/^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/i.test(site)) {
+  if (!/^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/i.test(domain)) {
     showStatus('Please enter a valid domain (e.g., facebook.com)', 'error');
     return;
   }
   
   // Check if site already exists
-  if (currentSettings.sites.includes(site)) {
+  if (currentSettings.sites.some(site => site.domain === domain)) {
     showStatus('This site is already in the list', 'error');
     return;
   }
   
-  // Add the site
-  currentSettings.sites.push(site);
+  // Add the site with default time settings
+  currentSettings.sites.push({
+    domain: domain,
+    grayscaleTime: currentSettings.defaultGrayscaleTime,
+    blockTime: currentSettings.defaultBlockTime
+  });
+  
   await saveSettings();
   
   // Update UI
   updateUI();
   newSiteInput.value = '';
   
-  showStatus(`Added ${site} to monitored sites`, 'success');
+  showStatus(`Added ${domain} to monitored sites`, 'success');
 }
 
 // Remove a site
-async function removeSite(site) {
-  currentSettings.sites = currentSettings.sites.filter(s => s !== site);
+async function removeSite(domain) {
+  currentSettings.sites = currentSettings.sites.filter(site => site.domain !== domain);
   await saveSettings();
   updateUI();
-  showStatus(`Removed ${site} from monitored sites`, 'success');
+  showStatus(`Removed ${domain} from monitored sites`, 'success');
 }
 
-// Update time settings
+// Update default time settings
 async function updateTimeSettings() {
   const grayscaleTime = parseInt(grayscaleTimeInput.value);
   const blockTime = parseInt(blockTimeInput.value);
   
   // Validation
   if (isNaN(grayscaleTime) || grayscaleTime < 1 || grayscaleTime > 180) {
-    showStatus('Grayscale time must be between 1 and 180 minutes', 'error');
-    grayscaleTimeInput.value = currentSettings.grayscaleTime;
+    showStatus('Default grayscale time must be between 1 and 180 minutes', 'error');
+    grayscaleTimeInput.value = currentSettings.defaultGrayscaleTime;
     return;
   }
   
   if (isNaN(blockTime) || blockTime < 5 || blockTime > 240) {
-    showStatus('Block time must be between 5 and 240 minutes', 'error');
-    blockTimeInput.value = currentSettings.blockTime;
+    showStatus('Default block time must be between 5 and 240 minutes', 'error');
+    blockTimeInput.value = currentSettings.defaultBlockTime;
     return;
   }
   
   if (blockTime <= grayscaleTime) {
-    showStatus('Block time must be greater than grayscale time', 'error');
+    showStatus('Default block time must be greater than grayscale time', 'error');
     return;
   }
   
   // Update settings
-  currentSettings.grayscaleTime = grayscaleTime;
-  currentSettings.blockTime = blockTime;
+  currentSettings.defaultGrayscaleTime = grayscaleTime;
+  currentSettings.defaultBlockTime = blockTime;
   await saveSettings();
   
-  showStatus('Time settings updated successfully', 'success');
+  showStatus('Default time settings updated successfully', 'success');
 }
 
 // Reset all usage data
@@ -192,10 +287,39 @@ function importSettings() {
           const settings = JSON.parse(e.target.result);
           
           // Validate imported settings
-          if (!settings.sites || !Array.isArray(settings.sites) || 
-              typeof settings.grayscaleTime !== 'number' || 
-              typeof settings.blockTime !== 'number') {
-            throw new Error('Invalid settings format');
+          if (!settings.sites || !Array.isArray(settings.sites)) {
+            throw new Error('Invalid settings format: missing or invalid sites array');
+          }
+          
+          // Check if this is the old format (sites as string array) and convert if needed
+          if (typeof settings.sites[0] === 'string') {
+            // Convert from old format to new format
+            const oldSites = [...settings.sites];
+            settings.sites = oldSites.map(domain => ({
+              domain,
+              grayscaleTime: settings.grayscaleTime || 15,
+              blockTime: settings.blockTime || 45
+            }));
+            
+            settings.defaultGrayscaleTime = settings.grayscaleTime || 15;
+            settings.defaultBlockTime = settings.blockTime || 45;
+            
+            // Remove old properties
+            delete settings.grayscaleTime;
+            delete settings.blockTime;
+          } else {
+            // Validate new format
+            for (const site of settings.sites) {
+              if (!site.domain || typeof site.grayscaleTime !== 'number' || typeof site.blockTime !== 'number') {
+                throw new Error('Invalid site format in imported settings');
+              }
+            }
+            
+            if (typeof settings.defaultGrayscaleTime !== 'number' || typeof settings.defaultBlockTime !== 'number') {
+              // Set defaults if missing
+              settings.defaultGrayscaleTime = settings.defaultGrayscaleTime || 15;
+              settings.defaultBlockTime = settings.defaultBlockTime || 45;
+            }
           }
           
           // Update settings

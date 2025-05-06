@@ -1,22 +1,34 @@
 // Default settings
 const DEFAULT_SETTINGS = {
   sites: [
-    "facebook.com",
-    "twitter.com",
-    "instagram.com",
-    "tiktok.com",
-    "linkedin.com"
+    { domain: "facebook.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "twitter.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "instagram.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "tiktok.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "linkedin.com", grayscaleTime: 15, blockTime: 45 }
   ],
-  grayscaleTime: 15, // minutes
-  blockTime: 45      // minutes
+  defaultGrayscaleTime: 15, // minutes - used for newly added sites
+  defaultBlockTime: 45      // minutes - used for newly added sites
 };
 
 // Current settings (will be updated from storage)
 let settings = { ...DEFAULT_SETTINGS };
 
-// Time thresholds in milliseconds (will be updated from settings)
-let GRAYSCALE_THRESHOLD = settings.grayscaleTime * 60 * 1000;
-let BLOCK_THRESHOLD = settings.blockTime * 60 * 1000;
+// Site-specific thresholds cache (domain -> thresholds)
+const siteThresholds = new Map();
+
+// Update the site thresholds cache
+function updateSiteThresholds() {
+  siteThresholds.clear();
+  
+  // Cache thresholds for each site
+  settings.sites.forEach(site => {
+    siteThresholds.set(site.domain, {
+      grayscale: site.grayscaleTime * 60 * 1000,
+      block: site.blockTime * 60 * 1000
+    });
+  });
+}
 
 // Load settings from storage
 function loadSettings() {
@@ -24,9 +36,8 @@ function loadSettings() {
     if (result.settings) {
       settings = result.settings;
       
-      // Update thresholds
-      GRAYSCALE_THRESHOLD = settings.grayscaleTime * 60 * 1000;
-      BLOCK_THRESHOLD = settings.blockTime * 60 * 1000;
+      // Update site thresholds cache
+      updateSiteThresholds();
       
       // Update UI if needed
       if (currentTab && currentSite) {
@@ -73,20 +84,27 @@ function updateUI() {
   // Update time display
   timeDisplay.textContent = formatTime(currentTime);
   
+  // Get thresholds for the current site
+  let thresholds = { grayscale: 0, block: 0, grayscaleTime: 0, blockTime: 0 };
+  
+  if (currentTab && currentTab.url) {
+    thresholds = getThresholdsForUrl(currentTab.url);
+  }
+  
   // Update progress bar
   let progressPercentage = 0;
   let progressClass = '';
   
-  if (currentTime >= BLOCK_THRESHOLD) {
+  if (currentTime >= thresholds.block) {
     progressPercentage = 100;
     progressClass = 'danger';
-    statusMessage.textContent = `Access blocked (${settings.blockTime}+ minutes)`;
-  } else if (currentTime >= GRAYSCALE_THRESHOLD) {
-    progressPercentage = (currentTime - GRAYSCALE_THRESHOLD) / (BLOCK_THRESHOLD - GRAYSCALE_THRESHOLD) * 50 + 50;
+    statusMessage.textContent = `Access blocked (${thresholds.blockTime}+ minutes)`;
+  } else if (currentTime >= thresholds.grayscale) {
+    progressPercentage = (currentTime - thresholds.grayscale) / (thresholds.block - thresholds.grayscale) * 50 + 50;
     progressClass = 'warning';
-    statusMessage.textContent = `Grayscale mode (${settings.grayscaleTime}+ minutes)`;
+    statusMessage.textContent = `Grayscale mode (${thresholds.grayscaleTime}+ minutes)`;
   } else if (currentTime > 0) {
-    progressPercentage = (currentTime / GRAYSCALE_THRESHOLD) * 50;
+    progressPercentage = (currentTime / thresholds.grayscale) * 50;
     progressClass = '';
     statusMessage.textContent = 'Normal browsing';
   } else {
@@ -126,7 +144,32 @@ function getDomainFromUrl(url) {
 function isSNSSite(url) {
   if (!url) return false;
   const domain = getDomainFromUrl(url);
-  return settings.sites.some(site => domain && domain.includes(site));
+  return settings.sites.some(site => domain && domain.includes(site.domain));
+}
+
+// Get thresholds for a specific URL
+function getThresholdsForUrl(url) {
+  const domain = getDomainFromUrl(url);
+  
+  // Find the matching site in settings
+  for (const site of settings.sites) {
+    if (domain && domain.includes(site.domain)) {
+      return {
+        grayscale: site.grayscaleTime * 60 * 1000,
+        block: site.blockTime * 60 * 1000,
+        grayscaleTime: site.grayscaleTime,
+        blockTime: site.blockTime
+      };
+    }
+  }
+  
+  // Return default thresholds if no match found
+  return {
+    grayscale: settings.defaultGrayscaleTime * 60 * 1000,
+    block: settings.defaultBlockTime * 60 * 1000,
+    grayscaleTime: settings.defaultGrayscaleTime,
+    blockTime: settings.defaultBlockTime
+  };
 }
 
 // Get data for all monitored sites
@@ -177,6 +220,9 @@ async function populateSiteList() {
     const listItem = document.createElement('li');
     listItem.className = 'site-item';
     
+    // Find site settings for this domain
+    const siteSettings = settings.sites.find(site => domain.includes(site.domain));
+    
     const siteName = document.createElement('span');
     siteName.className = 'site-name';
     siteName.textContent = domain;
@@ -185,7 +231,19 @@ async function populateSiteList() {
     siteTime.className = 'site-time';
     siteTime.textContent = formatTime(domainMap[domain]);
     
+    // Add time limits info
+    const timeLimits = document.createElement('span');
+    timeLimits.className = 'site-limits';
+    
+    if (siteSettings) {
+      timeLimits.textContent = `(${siteSettings.grayscaleTime}/${siteSettings.blockTime} min)`;
+    } else {
+      // Use default settings if no site-specific settings found
+      timeLimits.textContent = `(${settings.defaultGrayscaleTime}/${settings.defaultBlockTime} min)`;
+    }
+    
     listItem.appendChild(siteName);
+    listItem.appendChild(timeLimits);
     listItem.appendChild(siteTime);
     siteList.appendChild(listItem);
   });

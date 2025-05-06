@@ -1,22 +1,21 @@
 // Default settings
 const DEFAULT_SETTINGS = {
   sites: [
-    "facebook.com",
-    "twitter.com",
-    "instagram.com",
-    "tiktok.com",
-    "linkedin.com"
+    { domain: "facebook.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "twitter.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "instagram.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "tiktok.com", grayscaleTime: 15, blockTime: 45 },
+    { domain: "linkedin.com", grayscaleTime: 15, blockTime: 45 }
   ],
-  grayscaleTime: 15, // minutes
-  blockTime: 45      // minutes
+  defaultGrayscaleTime: 15, // minutes - used for newly added sites
+  defaultBlockTime: 45      // minutes - used for newly added sites
 };
 
 // Current settings (will be updated from storage)
 let settings = { ...DEFAULT_SETTINGS };
 
-// Time thresholds in milliseconds (will be updated from settings)
-let GRAYSCALE_THRESHOLD = settings.grayscaleTime * 60 * 1000;
-let BLOCK_THRESHOLD = settings.blockTime * 60 * 1000;
+// Site-specific thresholds cache (domain -> thresholds)
+const siteThresholds = new Map();
 
 // Load settings from storage
 function loadSettings() {
@@ -24,10 +23,22 @@ function loadSettings() {
     if (result.settings) {
       settings = result.settings;
       
-      // Update thresholds
-      GRAYSCALE_THRESHOLD = settings.grayscaleTime * 60 * 1000;
-      BLOCK_THRESHOLD = settings.blockTime * 60 * 1000;
+      // Update site thresholds cache
+      updateSiteThresholds();
     }
+  });
+}
+
+// Update the site thresholds cache
+function updateSiteThresholds() {
+  siteThresholds.clear();
+  
+  // Cache thresholds for each site
+  settings.sites.forEach(site => {
+    siteThresholds.set(site.domain, {
+      grayscale: site.grayscaleTime * 60 * 1000,
+      block: site.blockTime * 60 * 1000
+    });
   });
 }
 
@@ -37,10 +48,50 @@ loadSettings();
 // Store usage data for each tab
 const tabData = {};
 
+// Get domain from URL
+function getDomainFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    
+    // Extract the domain (e.g., facebook.com from www.facebook.com)
+    const parts = hostname.split('.');
+    if (parts.length > 2) {
+      return parts.slice(parts.length - 2).join('.');
+    }
+    return hostname;
+  } catch (error) {
+    console.error("Error parsing URL:", error);
+    return null;
+  }
+}
+
 // Check if a URL is an SNS site
 function isSNSSite(url) {
   if (!url) return false;
-  return settings.sites.some(site => url.includes(site));
+  const domain = getDomainFromUrl(url);
+  return settings.sites.some(site => domain && domain.includes(site.domain));
+}
+
+// Get thresholds for a specific URL
+function getThresholdsForUrl(url) {
+  const domain = getDomainFromUrl(url);
+  
+  // Find the matching site in settings
+  for (const site of settings.sites) {
+    if (domain && domain.includes(site.domain)) {
+      return {
+        grayscale: site.grayscaleTime * 60 * 1000,
+        block: site.blockTime * 60 * 1000
+      };
+    }
+  }
+  
+  // Return default thresholds if no match found
+  return {
+    grayscale: settings.defaultGrayscaleTime * 60 * 1000,
+    block: settings.defaultBlockTime * 60 * 1000
+  };
 }
 
 // Initialize tab data when a new tab is created
@@ -114,7 +165,6 @@ function initTabData(tabId, url) {
     if (result[url]) {
       const storedData = result[url];
       tabData[tabId].totalTime = storedData.totalTime || 0;
-      
       // Apply appropriate restrictions based on stored time
       applyRestrictions(tabId);
     }
@@ -148,11 +198,14 @@ function applyRestrictions(tabId) {
   if (!tabData[tabId]) return;
   
   const totalTime = tabData[tabId].totalTime;
+  const url = tabData[tabId].url;
+  const thresholds = getThresholdsForUrl(url);
+  
   let newStatus = 'normal';
   
-  if (totalTime >= BLOCK_THRESHOLD) {
+  if (totalTime >= thresholds.block) {
     newStatus = 'blocked';
-  } else if (totalTime >= GRAYSCALE_THRESHOLD) {
+  } else if (totalTime >= thresholds.grayscale) {
     newStatus = 'grayscale';
   }
   
@@ -254,9 +307,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Update settings
     settings = message.settings;
     
-    // Update thresholds
-    GRAYSCALE_THRESHOLD = settings.grayscaleTime * 60 * 1000;
-    BLOCK_THRESHOLD = settings.blockTime * 60 * 1000;
+    // Update site thresholds cache
+    updateSiteThresholds();
     
     // Re-evaluate all tabs with the new settings
     Object.keys(tabData).forEach((tabId) => {

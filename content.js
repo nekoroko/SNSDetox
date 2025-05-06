@@ -148,17 +148,58 @@ function removeGrayscale() {
   }
 }
 
+// Get domain from URL
+function getDomainFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    
+    // Extract the domain (e.g., facebook.com from www.facebook.com)
+    const parts = hostname.split('.');
+    if (parts.length > 2) {
+      return parts.slice(parts.length - 2).join('.');
+    }
+    return hostname;
+  } catch (error) {
+    console.error("Error parsing URL:", error);
+    return null;
+  }
+}
+
 // Get settings from storage
 function getSettings() {
   return new Promise((resolve) => {
     chrome.storage.sync.get('settings', (result) => {
       if (result.settings) {
-        resolve(result.settings);
+        // Get the current domain
+        const domain = getDomainFromUrl(window.location.href);
+        
+        // Find site-specific settings
+        const siteSettings = result.settings.sites.find(site => 
+          domain && domain.includes(site.domain)
+        );
+        
+        if (siteSettings) {
+          // Return site-specific settings
+          resolve({
+            grayscaleTime: siteSettings.grayscaleTime,
+            blockTime: siteSettings.blockTime,
+            domain: siteSettings.domain
+          });
+        } else {
+          // Return default settings if no site-specific settings found
+          resolve({
+            grayscaleTime: result.settings.defaultGrayscaleTime,
+            blockTime: result.settings.defaultBlockTime,
+            domain: domain
+          });
+        }
       } else {
         // Default settings if not found
         resolve({
           grayscaleTime: 15,
-          blockTime: 45
+          blockTime: 45,
+          domain: getDomainFromUrl(window.location.href)
         });
       }
     });
