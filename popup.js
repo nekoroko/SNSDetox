@@ -353,20 +353,37 @@ document.addEventListener('DOMContentLoaded', initPopup);
 resetButton.addEventListener('click', resetCurrentSite);
 settingsButton.addEventListener('click', openSettings);
 
-// Counter for site list refresh
-let siteListRefreshCounter = 0;
-
 // Refresh data every second
 setInterval(() => {
-  if (currentTab && currentSite && currentStatus !== 'blocked') {
-    currentTime += 1000; // Add 1 second
-    updateUI();
+  if (currentTab && currentSite) {
+    // Get the latest data from localStorage instead of incrementing locally
+    const domain = getDomainFromUrl(currentTab.url);
+    if (domain) {
+      chrome.storage.local.get([domain], (result) => {
+        if (result[domain] && result[domain].totalTime !== undefined) {
+          // Update with the latest time from localStorage
+          currentTime = result[domain].totalTime;
+          
+          // Also update status if available
+          if (result[domain].status) {
+            currentStatus = result[domain].status;
+          }
+          
+          updateUI();
+        } else {
+          // Fall back to getting time from background.js
+          chrome.runtime.sendMessage({ action: 'getStatus', tabId: currentTab.id }, (response) => {
+            if (response && response.totalTime !== undefined) {
+              currentTime = response.totalTime;
+              currentStatus = response.status || currentStatus;
+              updateUI();
+            }
+          });
+        }
+      });
+    }
   }
   
-  // Refresh the site list every 5 seconds to reduce performance impact
-  siteListRefreshCounter++;
-  if (siteListRefreshCounter >= 5) {
-    populateSiteList();
-    siteListRefreshCounter = 0;
-  }
+  // Refresh the site list every time
+  populateSiteList();
 }, 1000);

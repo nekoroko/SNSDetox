@@ -159,15 +159,15 @@ function formatTime(milliseconds) {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// Create and show the timer element
+// Create and show the timer element with input box and prohibition button
 function createTimer() {
   // Remove existing timer if any
   removeTimer();
   
-  // Create timer element
-  timerElement = document.createElement('div');
-  timerElement.id = 'sns-detox-timer';
-  timerElement.style.cssText = `
+  // Create container for all elements
+  const container = document.createElement('div');
+  container.id = 'sns-detox-container';
+  container.style.cssText = `
     position: fixed;
     top: 60px;
     left: 10px;
@@ -180,12 +180,291 @@ function createTimer() {
     font-weight: bold;
     z-index: 2147483645;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
   `;
   
-  document.body.appendChild(timerElement);
+  // Create control panel (input and button)
+  const controlPanel = document.createElement('div');
+  controlPanel.style.cssText = `
+    display: flex;
+    margin-bottom: 5px;
+    align-items: center;
+  `;
+  
+  // Create input box for minutes
+  const inputBox = document.createElement('input');
+  inputBox.type = 'number';
+  inputBox.min = '1';
+  inputBox.max = '120';
+  inputBox.value = '15';
+  inputBox.id = 'sns-detox-minutes';
+  inputBox.style.cssText = `
+    width: 40px;
+    height: 20px;
+    margin-right: 5px;
+    border: none;
+    border-radius: 3px;
+    text-align: center;
+    font-size: 12px;
+  `;
+  
+  // Create prohibition button
+  const prohibitButton = document.createElement('button');
+  prohibitButton.textContent = '禁止';
+  prohibitButton.id = 'sns-detox-prohibit';
+  prohibitButton.style.cssText = `
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  `;
+  
+  // Add event listener to the button
+  prohibitButton.addEventListener('click', () => {
+    const minutes = parseInt(inputBox.value, 10);
+    if (isNaN(minutes) || minutes < 1) {
+      alert('有効な分数を入力してください');
+      return;
+    }
+    
+    // Apply temporary block for the specified duration
+    applyTemporaryBlock(minutes);
+  });
+  
+  // Add input and button to control panel
+  controlPanel.appendChild(inputBox);
+  controlPanel.appendChild(prohibitButton);
+  
+  // Create timer element
+  timerElement = document.createElement('div');
+  timerElement.id = 'sns-detox-timer';
+  
+  // Add control panel and timer to container
+  container.appendChild(controlPanel);
+  container.appendChild(timerElement);
+  
+  // Add container to body
+  document.body.appendChild(container);
   
   // Start timer update interval
   startTimerUpdate();
+}
+
+// Apply a temporary block for the specified duration
+function applyTemporaryBlock(minutes) {
+  const milliseconds = minutes * 60 * 1000;
+  const endTime = Date.now() + milliseconds;
+  const domain = getDomainFromUrl(window.location.href);
+  
+  // Store the restriction information in chrome.storage.local
+  if (domain) {
+    const restrictionData = {
+      endTime: endTime,
+      minutes: minutes,
+      status: '禁止', // Store the status in localStorage
+      createdAt: Date.now() // Add creation timestamp for debugging
+    };
+    
+    chrome.storage.local.set({
+      [`${domain}_restriction`]: restrictionData
+    });
+  }
+  
+  // Set the tab status to "禁止" in the background script
+  chrome.runtime.sendMessage({
+    action: 'setStatus',
+    status: '禁止',
+    domain: domain
+  });
+  
+  // Create and show the overlay
+  showTemporaryBlockOverlay(minutes, endTime);
+}
+
+// Show the temporary block overlay
+function showTemporaryBlockOverlay(minutes, endTime) {
+  // Create a full-page overlay
+  let overlay = document.getElementById('sns-detox-temp-overlay');
+  if (!overlay) {
+    // Store the current domain as a data attribute for later use
+    const domain = getDomainFromUrl(window.location.href);
+    
+    overlay = document.createElement('div');
+    overlay.id = 'sns-detox-temp-overlay';
+    // Store domain as a data attribute
+    overlay.dataset.domain = domain;
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.9);
+      z-index: 2147483647;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    `;
+    
+    const message = document.createElement('h1');
+    message.textContent = 'SNSアクセス制限中';
+    message.style.cssText = 'margin-bottom: 20px; font-size: 24px;';
+    
+    const description = document.createElement('p');
+    description.textContent = `${minutes}分間のSNS制限を設定しました。`;
+    description.style.cssText = 'margin-bottom: 30px; font-size: 18px;';
+    
+    const timeLeft = document.createElement('div');
+    timeLeft.id = 'sns-detox-time-left';
+    timeLeft.style.cssText = 'font-size: 36px; margin-bottom: 40px; font-weight: bold;';
+    
+    const suggestion = document.createElement('p');
+    suggestion.textContent = '他のことをしてみましょう。散歩、読書、または何か創造的なことをするのはいかがですか？';
+    suggestion.style.cssText = 'margin-bottom: 40px; font-size: 16px;';
+    
+    overlay.appendChild(message);
+    overlay.appendChild(description);
+    overlay.appendChild(timeLeft);
+    overlay.appendChild(suggestion);
+    
+    document.body.appendChild(overlay);
+    
+    // Prevent scrolling
+    document.body.style.overflow = 'hidden';
+    
+    // Pause the timer tracking
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    
+    // Tell background script to pause tracking
+    chrome.runtime.sendMessage({
+      action: 'pauseTracking',
+      domain: overlay.dataset.domain
+    });
+    
+    // Start countdown timer
+    startCountdownTimer(endTime);
+  }
+}
+
+// Start the countdown timer
+function startCountdownTimer(endTime) {
+  // Clear any existing countdown interval
+  if (window.countdownInterval) {
+    clearInterval(window.countdownInterval);
+  }
+  
+  // Update countdown timer
+  window.countdownInterval = setInterval(() => {
+    const now = Date.now();
+    const remaining = endTime - now;
+    
+    if (remaining <= 0) {
+      // Time's up, remove overlay
+      clearInterval(window.countdownInterval);
+      window.countdownInterval = null;
+      removeTemporaryBlock();
+    } else {
+      // Update countdown display
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      const timeLeftElement = document.getElementById('sns-detox-time-left');
+      if (timeLeftElement) {
+        timeLeftElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+    }
+  }, 1000);
+}
+
+// Remove temporary block
+function removeTemporaryBlock() {
+  const overlay = document.getElementById('sns-detox-temp-overlay');
+  if (overlay) {
+    // Get domain from the overlay's data attribute if available, otherwise from URL
+    let domain = overlay.dataset.domain;
+    if (!domain) {
+      domain = getDomainFromUrl(window.location.href);
+    }
+    
+    overlay.remove();
+    document.body.style.overflow = '';
+    
+    // Reset the status to normal in the background script
+    chrome.runtime.sendMessage({
+      action: 'setStatus',
+      status: 'normal',
+      domain: domain
+    }, (response) => {
+      if (response && response.success) {
+        // Resume timer tracking
+        startTimerUpdate();
+        
+        // Tell background script to resume tracking
+        chrome.runtime.sendMessage({
+          action: 'resumeTracking',
+          domain: domain
+        });
+      }
+    });
+    
+    // Update the domain data in localStorage to set status to normal
+    if (domain) {
+      chrome.storage.local.get([domain], (result) => {
+        if (result[domain]) {
+          const domainData = result[domain];
+          
+          // Update the status to normal
+          const dataToStore = {
+            ...domainData,
+            status: 'normal'
+          };
+          
+          chrome.storage.local.set({
+            [domain]: dataToStore
+          });
+        }
+      });
+      
+      // Clear the restriction from storage
+      chrome.storage.local.remove(`${domain}_restriction`);
+    }
+  }
+}
+
+// Check for active restrictions
+function checkForActiveRestrictions() {
+  const domain = getDomainFromUrl(window.location.href);
+  
+  if (domain) {
+    chrome.storage.local.get([`${domain}_restriction`], (result) => {
+      const restriction = result[`${domain}_restriction`];
+      
+      if (restriction) {
+        const now = Date.now();
+        const endTime = restriction.endTime;
+        const timeLeft = endTime - now;
+        
+        if (now < endTime) {
+          // Restriction is still active
+          showTemporaryBlockOverlay(restriction.minutes, endTime);
+        } else {
+          // Restriction has expired, remove it
+          chrome.storage.local.remove(`${domain}_restriction`);
+        }
+      }
+    });
+  }
 }
 
 // Start updating the timer
@@ -202,11 +481,32 @@ function startTimerUpdate() {
       
       // Update timer every second
       timerInterval = setInterval(() => {
-        chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
-          if (response && response.totalTime) {
-            updateTimerDisplay(response.totalTime);
-          }
-        });
+        // Get the domain for the current page
+        const domain = getDomainFromUrl(window.location.href);
+        
+        if (domain) {
+          // First try to get the time from localStorage
+          chrome.storage.local.get([domain], (result) => {
+            if (result[domain] && result[domain].totalTime !== undefined) {
+              // Use the time from localStorage
+              updateTimerDisplay(result[domain].totalTime);
+            } else {
+              // Fall back to getting time from background.js
+              chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+                if (response && response.totalTime !== undefined) {
+                  updateTimerDisplay(response.totalTime);
+                }
+              });
+            }
+          });
+        } else {
+          // No domain, fall back to getting time from background.js
+          chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+            if (response && response.totalTime !== undefined) {
+              updateTimerDisplay(response.totalTime);
+            }
+          });
+        }
       }, 1000);
     }
   });
@@ -351,7 +651,13 @@ async function showNotification(type) {
 }
 
 // Update the page based on restriction status
-function updateRestriction(status) {
+async function updateRestriction(status) {
+  // Check if this is an SNS site
+  const isSNS = await checkIfSNSSite(window.location.href);
+  
+  // Only apply restrictions if this is an SNS site
+  if (!isSNS) return;
+  
   // Always process if status is 'normal' (reset case)
   // Otherwise, only process if the status has changed
   if (status !== 'normal' && status === currentStatus) return;
@@ -416,6 +722,9 @@ async function checkIfSNSSite(url) {
 
 // Check current status when the page loads
 window.addEventListener('load', async () => {
+  // First check for active temporary restrictions
+  checkForActiveRestrictions();
+  
   // Get current status
   chrome.runtime.sendMessage({ action: 'getStatus' }, async (response) => {
     if (response) {
@@ -435,6 +744,9 @@ window.addEventListener('load', async () => {
 // Make sure the restrictions are applied even if the page was already loaded
 // when the extension was activated
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  // First check for active temporary restrictions
+  checkForActiveRestrictions();
+  
   chrome.runtime.sendMessage({ action: 'getStatus' }, async (response) => {
     if (response) {
       updateRestriction(response.status);
